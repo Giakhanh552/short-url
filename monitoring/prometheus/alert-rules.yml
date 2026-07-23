@@ -9,8 +9,8 @@ groups:
           severity: critical
         annotations:
           summary: "URL shortener API is down"
-          description: "Prometheus cannot scrape the app on 127.0.0.1:3000 for >1m."
-          runbook: "ssh into VPS → pm2 status → pm2 logs url-shortener → pm2 restart url-shortener → curl -s http://127.0.0.1:3000/api/health"
+          description: "Prometheus cannot scrape the app on 127.0.0.1:3080 for >1m."
+          runbook: "ssh into VPS → pm2 status → pm2 logs url-shortener → pm2 restart url-shortener → curl -s http://127.0.0.1:3080/api/health"
 
       # (2) High CPU sustained
       - alert: HighCPU
