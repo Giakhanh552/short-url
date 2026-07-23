@@ -1,0 +1,30 @@
+# Dependencies & build artifacts
+node_modules/
+client/dist/
+server/node_modules/
+**/npm-debug.log*
+**/.DS_Store
+
+# Secrets — never commit
+.env
+.env.local
+.env.*.local
+monitoring/.env
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Release packs
+*.tgz
+release/
+
+# Logs
+*.log
+/var/

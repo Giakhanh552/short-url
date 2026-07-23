@@ -1,0 +1,162 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Run unit tests
+        working-directory: server
+        run: npm test
+
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: Build client
+        working-directory: client
+        run: npm run build
+
+      - name: Install production server deps
+        working-directory: server
+        run: npm ci --omit=dev
+
+      - name: Pack release artifact
+        run: |
+          mkdir -p release
+          rsync -a --exclude node_modules --exclude .git server/ release/server/
+          rsync -a server/node_modules/ release/server/node_modules/
+          rsync -a client/dist/ release/client/dist/
+          rsync -a deploy/ release/deploy/
+          tar -czf url-shortener-release.tgz -C release .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: url-shortener-release.tgz
+          retention-days: 7
+
+  deploy:
+    name: Deploy to VPS
+    needs: ci
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: release
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Upload release to VPS
+        run: |
+          scp -i ~/.ssh/id_ed25519 \
+            url-shortener-release.tgz \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/url-shortener-release.tgz"
+
+      - name: Remote deploy & restart
+        run: |
+          ssh -i ~/.ssh/id_ed25519 \
+            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            "APP_ROOT='${{ secrets.DEPLOY_PATH }}' bash -s" <<'EOF'
+          set -euo pipefail
+          APP_ROOT="${APP_ROOT:-/var/www/url-shortener}"
+          mkdir -p "$APP_ROOT" /var/log/url-shortener
+          tar -xzf /tmp/url-shortener-release.tgz -C "$APP_ROOT"
+          cd "$APP_ROOT/server"
+          if [[ ! -f "$APP_ROOT/.env" && ! -f .env ]]; then
+            echo "Missing .env on VPS at $APP_ROOT/.env" >&2
+            exit 1
+          fi
+          if [[ -f "$APP_ROOT/.env" && ! -f .env ]]; then
+            ln -sfn "$APP_ROOT/.env" .env
+          fi
+          npm run migrate
+          pm2 startOrReload "$APP_ROOT/deploy/ecosystem.config.js" --update-env
+          pm2 save
+          EOF
+
+      - name: Health check
+        run: |
+          set -euo pipefail
+          HEALTH_URL="${{ secrets.HEALTH_URL }}"
+          if [[ -z "$HEALTH_URL" ]]; then
+            HEALTH_URL="https://${{ secrets.DOMAIN }}/api/health"
+          fi
+          echo "Checking $HEALTH_URL"
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 10 "$HEALTH_URL" | grep -q '"status":"ok"'; then
+              echo "Health OK"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 5
+          done
+          echo "Health check failed" >&2
+          exit 1
+
+  notify:
+    name: Discord notify
+    needs: [ci, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord message
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          CI_RESULT: ${{ needs.ci.result }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          ACTOR: ${{ github.actor }}
+          SHA: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          MSG=$(printf '%s' "$COMMIT_MSG" | head -n 1 | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')
+
+          if [[ "$CI_RESULT" == "success" && "$DEPLOY_RESULT" == "success" ]]; then
+            TITLE="Deploy succeeded"
+            COLOR=5763719
+            DESC="**By:** ${ACTOR}\\n**Commit:** ${MSG}\\n**SHA:** \\`${SHA}\\`"
+          else
+            TITLE="Deploy failed"
+            COLOR=15548997
+            DESC="**By:** ${ACTOR}\\n**CI:** ${CI_RESULT} · **Deploy:** ${DEPLOY_RESULT}\\nOpen the run log to debug."
+          fi
+
+          curl -fsS -X POST "$DISCORD_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{\"embeds\":[{\"title\":\"${TITLE}\",\"color\":${COLOR},\"description\":\"${DESC}\",\"url\":\"${RUN_URL}\"}]}"

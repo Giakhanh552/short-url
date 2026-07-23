@@ -1,0 +1,46 @@
+groups:
+  - name: url-shortener-alerts
+    rules:
+      # (1) App / API down
+      - alert: AppDown
+        expr: up{job="app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "URL shortener API is down"
+          description: "Prometheus cannot scrape the app on 127.0.0.1:3000 for >1m."
+          runbook: "ssh into VPS → pm2 status → pm2 logs url-shortener → pm2 restart url-shortener → curl -s http://127.0.0.1:3000/api/health"
+
+      # (2) High CPU sustained
+      - alert: HighCPU
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU usage above 85% for 5m"
+          description: "Instance {{ $labels.instance }} CPU is {{ $value | printf \"%.1f\" }}%."
+          runbook: "ssh → top -o %CPU → check pm2 / docker stats → kill runaway process or scale down load"
+
+      # (2b) High memory (extra host alert — still covers RAM pillar)
+      - alert: HighMemory
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAM usage above 90% for 5m"
+          description: "Memory used {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }}."
+          runbook: "ssh → free -h → pm2 list → docker stats → restart heavy services if needed"
+
+      # (3) Disk almost full
+      - alert: DiskAlmostFull
+        expr: (1 - (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay",mountpoint="/"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay",mountpoint="/"})) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Root disk usage above 85% for 5m"
+          description: "Filesystem / is {{ $value | printf \"%.1f\" }}% full."
+          runbook: "ssh → df -h → journalctl --vacuum-size=200M → docker system prune -f → clear old logs in /var/log/url-shortener"
