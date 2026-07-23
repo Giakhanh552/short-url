@@ -181,12 +181,35 @@ jobs:
                   }
               ]
           }
+          data = json.dumps(body).encode()
           req = urllib.request.Request(
               os.environ["DISCORD_WEBHOOK_URL"],
-              data=json.dumps(body).encode(),
-              headers={"Content-Type": "application/json"},
+              data=data,
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "ShortlyDeployBot/1.0",
+              },
               method="POST",
           )
-          with urllib.request.urlopen(req) as resp:
-              print("discord_status", resp.status)
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  print("discord_status", resp.status)
+          except Exception as e:
+              # fallback: curl often works when urllib is blocked
+              import subprocess
+              r = subprocess.run(
+                  [
+                      "curl", "-sS", "-o", "/tmp/discord_out.txt", "-w", "%{http_code}",
+                      "-X", "POST", os.environ["DISCORD_WEBHOOK_URL"],
+                      "-H", "Content-Type: application/json",
+                      "-H", "User-Agent: ShortlyDeployBot/1.0",
+                      "-d", data.decode(),
+                  ],
+                  check=False,
+                  capture_output=True,
+                  text=True,
+              )
+              print("curl_status", r.stdout, r.stderr)
+              if r.stdout.strip() not in {"200", "204"}:
+                  raise SystemExit(f"discord failed: {r.stdout} {Path('/tmp/discord_out.txt').read_text() if Path('/tmp/discord_out.txt').exists() else ''}")
           PY
