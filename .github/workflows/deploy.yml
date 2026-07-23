@@ -48,7 +48,7 @@ jobs:
 
       - name: Pack release artifact
         run: |
-          mkdir -p release
+          mkdir -p release/server release/client/dist release/deploy
           rsync -a --exclude node_modules --exclude .git server/ release/server/
           rsync -a server/node_modules/ release/server/node_modules/
           rsync -a client/dist/ release/client/dist/
