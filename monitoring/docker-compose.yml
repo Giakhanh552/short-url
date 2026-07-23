@@ -34,6 +34,7 @@ services:
       - "--config.file=/etc/alertmanager/alertmanager.yml"
       - "--web.listen-address=127.0.0.1:9093"
       - "--storage.path=/alertmanager"
+      - "--cluster.listen-address="
     volumes:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
