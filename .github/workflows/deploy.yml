@@ -66,7 +66,6 @@ jobs:
     name: Deploy to VPS
     needs: ci
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
       - name: Download artifact
