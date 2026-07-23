@@ -79,17 +79,25 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+          SSH_PORT="${{ secrets.SSH_PORT }}"
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh-keyscan -p "$SSH_PORT" -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Upload release to VPS
+        env:
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
-          scp -i ~/.ssh/id_ed25519 \
+          SSH_PORT="${SSH_PORT:-22}"
+          scp -i ~/.ssh/id_ed25519 -P "$SSH_PORT" \
             url-shortener-release.tgz \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/tmp/url-shortener-release.tgz"
 
       - name: Remote deploy & restart
+        env:
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
-          ssh -i ~/.ssh/id_ed25519 \
+          SSH_PORT="${SSH_PORT:-22}"
+          ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT" \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
             "APP_ROOT='${{ secrets.DEPLOY_PATH }}' bash -s" <<'EOF'
           set -euo pipefail
