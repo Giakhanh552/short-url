@@ -152,18 +152,41 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          MSG=$(printf '%s' "$COMMIT_MSG" | head -n 1 | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read())[1:-1])')
+          python3 <<'PY'
+          import json, os, urllib.request
 
-          if [[ "$CI_RESULT" == "success" && "$DEPLOY_RESULT" == "success" ]]; then
-            TITLE="Deploy succeeded"
-            COLOR=5763719
-            DESC="**By:** ${ACTOR}\\n**Commit:** ${MSG}\\n**SHA:** \\`${SHA}\\`"
-          else
-            TITLE="Deploy failed"
-            COLOR=15548997
-            DESC="**By:** ${ACTOR}\\n**CI:** ${CI_RESULT} · **Deploy:** ${DEPLOY_RESULT}\\nOpen the run log to debug."
-          fi
+          ci = os.environ["CI_RESULT"]
+          deploy = os.environ["DEPLOY_RESULT"]
+          actor = os.environ["ACTOR"]
+          sha = os.environ["SHA"]
+          run_url = os.environ["RUN_URL"]
+          commit = (os.environ.get("COMMIT_MSG") or "").splitlines()[0][:180]
 
-          curl -fsS -X POST "$DISCORD_WEBHOOK_URL" \
-            -H "Content-Type: application/json" \
-            -d "{\"embeds\":[{\"title\":\"${TITLE}\",\"color\":${COLOR},\"description\":\"${DESC}\",\"url\":\"${RUN_URL}\"}]}"
+          if ci == "success" and deploy == "success":
+              title = "Deploy succeeded"
+              color = 5763719
+              desc = f"**By:** {actor}\n**Commit:** {commit}\n**SHA:** `{sha}`"
+          else:
+              title = "Deploy failed"
+              color = 15548997
+              desc = f"**By:** {actor}\n**CI:** {ci} · **Deploy:** {deploy}\nOpen the run log to debug."
+
+          body = {
+              "embeds": [
+                  {
+                      "title": title,
+                      "color": color,
+                      "description": desc,
+                      "url": run_url,
+                  }
+              ]
+          }
+          req = urllib.request.Request(
+              os.environ["DISCORD_WEBHOOK_URL"],
+              data=json.dumps(body).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req) as resp:
+              print("discord_status", resp.status)
+          PY
