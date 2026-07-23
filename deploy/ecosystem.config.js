@@ -16,7 +16,7 @@ module.exports = {
       env: {
         NODE_ENV: "production",
         HOST: "127.0.0.1",
-        PORT: "3000",
+        PORT: "3080",
       },
       error_file: "/var/log/url-shortener/error.log",
       out_file: "/var/log/url-shortener/out.log",
