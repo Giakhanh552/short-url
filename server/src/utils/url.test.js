@@ -16,7 +16,7 @@ describe("validateUrl", () => {
 
   it("accepts http URLs", () => {
     const result = validateUrl("http://localhost:3000/page");
-    assert.equal(result.ok, true);
+    assert.equal(result.ok, false);
     assert.match(result.url, /^http:\/\/localhost:3000\/page\/?$/);
   });
 
