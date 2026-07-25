@@ -131,7 +131,7 @@ export default function App() {
     <div className="page">
       <header className="hero">
         <p className="brand">Shortly</p>
-        <h1>Rút gọn link</h1>
+        <h1>Rút gọn link cho vui</h1>
         <p className="lede">
           Tạo, sửa, xoá link ngắn — đếm lượt click, sẵn sàng cho DevOps lab.
         </p>
